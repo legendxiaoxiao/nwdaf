@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/free5gc/nwdaf/internal/logger"
+	"github.com/free5gc/util/mongoapi"
+	"go.mongodb.org/mongo-driver/bson"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,9 +34,11 @@ type AmfLocationReport struct {
 }
 
 type SMFEventReport struct {
-	Supi      string    `json:"supi"`
-	EventType string    `json:"eventType"`
-	Timestamp time.Time `json:"timestamp"`
+	Supi           string                 `json:"supi"`
+	EventType      string                 `json:"eventType"`
+	Timestamp      time.Time              `json:"timestamp"`
+	EventDetails   map[string]interface{} `json:"eventDetails"`
+	PduSessionId   int32                  `json:"pduSessionId"`
 }
 
 func HandleUliNotification(c *gin.Context) {
@@ -56,6 +60,18 @@ func HandleUliNotification(c *gin.Context) {
 		locReport.Location.NrLocation.Tai.Tac,
 		locReport.Location.NrLocation.Ncgi.NrCellId)
 
+	// 将AMF位置信息写入MongoDB
+	coll := "nwdaf.amf.locationReport"
+	filter := bson.M{"supi": locReport.Supi, "nrCellId": locReport.Location.NrLocation.Ncgi.NrCellId}
+	putData := bson.M{
+		"supi":     locReport.Supi,
+		"type":     locReport.Type,
+		"tac":      locReport.Location.NrLocation.Tai.Tac,
+		"nrCellId": locReport.Location.NrLocation.Ncgi.NrCellId,
+		"plmnId":   bson.M{"mcc": locReport.Location.NrLocation.Tai.PlmnId.Mcc, "mnc": locReport.Location.NrLocation.Tai.PlmnId.Mnc},
+	}
+	_, _ = mongoapi.RestfulAPIPutOne(coll, filter, putData)
+
 	c.Status(http.StatusNoContent)
 }
 
@@ -68,9 +84,21 @@ func HandleSMFEventNotification(c *gin.Context) {
 	}
 
 	switch smfEvent.EventType {
-	case "PDU_SESSION_ESTABLISHMENT", "PDU_SESSION_RELEASE":
-		logger.AppLog.Printf("[INFO] 收到SMF事件: %s, SUPI=%s, ts=%s",
-			smfEvent.EventType, smfEvent.Supi, smfEvent.Timestamp.Format(time.RFC3339))
+	case "PDU_SESSION_ESTABLISHMENT", "PDU_SESSION_MODIFICATION", "PDU_SESSION_RELEASE":
+		pduState, _ := smfEvent.EventDetails["pduSessionState"].(string)
+		qfiRaw, _ := smfEvent.EventDetails["qfiList"].([]interface{})
+		qfiList := make([]int, 0, len(qfiRaw))
+		for _, v := range qfiRaw {
+			if n, ok := v.(float64); ok {
+				qfiList = append(qfiList, int(n))
+			}
+		}
+		logger.AppLog.Printf("[INFO] 收到SMF事件: %s, SUPI=%s, PDU=%d, state=%s, qfi=%v, ts=%s",
+			smfEvent.EventType, smfEvent.Supi, smfEvent.PduSessionId, pduState, qfiList, smfEvent.Timestamp.Format(time.RFC3339))
+		coll := "nwdaf.smf.events"
+		filter := bson.M{"supi": smfEvent.Supi, "pduSessionId": smfEvent.PduSessionId, "eventType": smfEvent.EventType, "timestamp": smfEvent.Timestamp}
+		putData := bson.M{"supi": smfEvent.Supi, "pduSessionId": smfEvent.PduSessionId, "eventType": smfEvent.EventType, "timestamp": smfEvent.Timestamp, "pduSessionState": pduState, "qfiList": qfiList}
+		_, _ = mongoapi.RestfulAPIPutOne(coll, filter, putData)
 		c.JSON(http.StatusOK, gin.H{"status": "SMF event received"})
 	default:
 		logger.AppLog.Printf("[INFO] 收到非期望SMF事件类型: %s, SUPI=%s", smfEvent.EventType, smfEvent.Supi)
@@ -78,7 +106,6 @@ func HandleSMFEventNotification(c *gin.Context) {
 	}
 }
 
-// 以下占位保证路由兼容，如需彻底删除可同步修改 nwdaf_service.go
 func HandleGetUli(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, gin.H{"error": "ULI query removed"})
 }

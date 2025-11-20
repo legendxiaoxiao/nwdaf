@@ -29,13 +29,14 @@ func DiscoverSmfFromNrf(ctx *nwdaf_context.NWDAFContext) (*SmfProfile, error) {
 func SubscribeToSmfEvents(nwdafCtx *nwdaf_context.NWDAFContext, smfProfile *SmfProfile) error {
 	// 构造SMF事件订阅请求体，仅订阅 PDU_SESSION_MODIFICATION
 	subBody := map[string]interface{}{
-		"notifUri": fmt.Sprintf("%s://%s:%d/nnwdaf-events/v1/smf-notifications",
-			nwdafCtx.URIScheme, nwdafCtx.RegisterIPv4, nwdafCtx.SBIPort),
-		"eventList": []string{
-			"PDU_SESSION_ESTABLISHMENT",
-			"PDU_SESSION_RELEASE",
-		},
-	}
+			"notifUri": fmt.Sprintf("%s://%s:%d/nnwdaf-events/v1/smf-notifications",
+				nwdafCtx.URIScheme, nwdafCtx.RegisterIPv4, nwdafCtx.SBIPort),
+			"eventList": []string{
+				"PDU_SESSION_ESTABLISHMENT",
+				"PDU_SESSION_MODIFICATION",
+				"PDU_SESSION_RELEASE",
+			},
+		}
 
 	data, _ := json.Marshal(subBody)
 
