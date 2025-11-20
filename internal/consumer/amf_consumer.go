@@ -25,7 +25,7 @@ func DiscoverAmfFromNrf(ctx *nwdaf_context.NWDAFContext) (*AmfProfile, error) {
 	}, nil
 }
 
-// 从NRF获取访问令牌
+// 从NRF获取访问令牌（AMF）
 func getAccessToken(nwdafCtx *nwdaf_context.NWDAFContext) (string, error) {
 	// 构造获取访问令牌的请求体（使用form格式）
 	tokenReq := "grant_type=client_credentials&nfType=NWDAF&targetNfType=AMF&nfInstanceId=" + nwdafCtx.NfId + "&targetNfInstanceId=amf-1&scope=namf-evts"
@@ -66,9 +66,9 @@ func getAccessToken(nwdafCtx *nwdaf_context.NWDAFContext) (string, error) {
 	return accessToken, nil
 }
 
-// SubscribeToAmfEvents: 用 http.Client 向 AMF 订阅 ULI 事件
+// 向AMF订阅事件
 func SubscribeToAmfEvents(nwdafCtx *nwdaf_context.NWDAFContext, amfProfile *AmfProfile) error {
-	// 构造订阅请求体，使用正确的AmfCreateEventSubscription格式
+	// 构造订阅请求体
 	subBody := map[string]interface{}{
 		"subscription": map[string]interface{}{
 			"eventList": []map[string]interface{}{
@@ -83,9 +83,6 @@ func SubscribeToAmfEvents(nwdafCtx *nwdaf_context.NWDAFContext, amfProfile *AmfP
 	}
 
 	data, _ := json.Marshal(subBody)
-
-	// 打印订阅请求体，便于调试
-	fmt.Printf("订阅请求体: %s\n", string(data))
 
 	// 获取OAuth2令牌上下文
 	ctx, _, err := nwdafCtx.GetTokenCtx(models.ServiceName_NAMF_EVTS, models.NrfNfManagementNfType_AMF)
@@ -108,11 +105,6 @@ func SubscribeToAmfEvents(nwdafCtx *nwdaf_context.NWDAFContext, amfProfile *AmfP
 		return fmt.Errorf("getAccessToken error: %+v", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	fmt.Printf("订阅token: %s\n", accessToken)
-	fmt.Printf("订阅请求头: %v\n", req.Header)
-	fmt.Printf("订阅请求体: %s\n", string(data))
-	fmt.Printf("订阅URL: %s\n", amfProfile.EventExposureUrl)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -160,7 +152,6 @@ func SendRegisterNFInstance(nrfUri, nfId string, profile interface{}) error {
 	}
 
 	data, _ := json.Marshal(nfProfile)
-	// 使用PUT方法和正确的路径格式
 	req, err := http.NewRequest("PUT", nrfUri+"/nnrf-nfm/v1/nf-instances/"+nfId, bytes.NewReader(data))
 	if err != nil {
 		return err
@@ -168,7 +159,7 @@ func SendRegisterNFInstance(nrfUri, nfId string, profile interface{}) error {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// 新增：自动获取OAuth2 token并加到header
+	// 自动获取OAuth2 token并加到header
 	token, err := getAccessToken(&nwdaf_context.NWDAFContext{
 		NrfUri: nrfUri,
 		NfId:   nfId,
