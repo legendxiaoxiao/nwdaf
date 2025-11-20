@@ -5,6 +5,7 @@ import (
 
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/openapi/oauth"
+	"github.com/free5gc/util/mongoapi"
 )
 
 type NWDAFContext struct {
@@ -18,7 +19,7 @@ type NWDAFContext struct {
 }
 
 func InitNwdafContext() *NWDAFContext {
-	return &NWDAFContext{
+	ctx := &NWDAFContext{
 		URIScheme:      "http",
 		RegisterIPv4:   "127.0.0.1",
 		SBIPort:        8001,
@@ -27,6 +28,8 @@ func InitNwdafContext() *NWDAFContext {
 		NrfCertPem:     "",
 		OAuth2Required: false,
 	}
+	_ = mongoapi.SetMongoDB("nwdaf", "mongodb://127.0.0.1:27017")
+	return ctx
 }
 
 func (c *NWDAFContext) GetNFProfile() interface{} {

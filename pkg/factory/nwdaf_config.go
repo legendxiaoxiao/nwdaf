@@ -12,9 +12,16 @@ type SbiConfig struct {
 	Port        int    `yaml:"port"`
 }
 
+type Mongodb struct {
+	Name string `yaml:"name"`
+	Url  string `yaml:"url"`
+}
+
+
 type NwdafConfig struct {
 	Configuration struct {
 		Sbi SbiConfig `yaml:"sbi"`
+		Mongodb Mongodb `yaml:"mongodb"`
 	} `yaml:"configuration"`
 }
 

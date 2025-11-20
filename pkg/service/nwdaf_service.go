@@ -9,6 +9,7 @@ import (
 	"github.com/free5gc/nwdaf/internal/handler"
 	"github.com/free5gc/nwdaf/internal/logger"
 	"github.com/free5gc/nwdaf/pkg/factory"
+	"github.com/free5gc/util/mongoapi"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,10 +20,21 @@ type NWDAF struct {
 
 func (n *NWDAF) Initialize() {
 	// Load config
-	factory.InitConfigFactory("../../config/nwdafcfg.yaml")
+	factory.InitConfigFactory("/home/ubuntu/free5gc/config/nwdafcfg.yaml")
 
 	// Initialize context
 	n.Ctx = context.InitNwdafContext()
+
+	mongo := factory.NwdafConfigInstance.Configuration.Mongodb
+	if mongo.Name != "" && mongo.Url != "" {
+		if err := mongoapi.SetMongoDB(mongo.Name, mongo.Url); err != nil {
+			logger.InitLog.Printf("[ERROR] MongoDB connect failed: %v", err)
+		} else {
+			logger.InitLog.Printf("[INFO] MongoDB connected: db=%s url=%s", mongo.Name, mongo.Url)
+		}
+	} else {
+		logger.InitLog.Printf("[WARN] MongoDB config missing, using default connection")
+	}
 
 	// ... other initializations
 	// 移除自动拉取AMF ULI的调用
