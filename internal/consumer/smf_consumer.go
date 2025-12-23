@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	nwdaf_context "github.com/free5gc/nwdaf/internal/context"
+	"github.com/free5gc/nwdaf/internal/util"
 	"github.com/free5gc/openapi/models"
+	Nnrf_NFDiscovery "github.com/free5gc/openapi/nrf/NFDiscovery"
 )
 
 // SMF相关的消费者函数
@@ -17,26 +19,45 @@ type SmfProfile struct {
 	EventExposureUrl string
 }
 
-// DiscoverSmfFromNrf: 发现SMF实例(别的网元是否能发现，云原生实现)
 func DiscoverSmfFromNrf(ctx *nwdaf_context.NWDAFContext) (*SmfProfile, error) {
-	// 根据 smfcfg.yaml 配置，SMF 事件订阅接口为 127.0.0.2:8000
-	return &SmfProfile{
-		EventExposureUrl: "http://127.0.0.2:8000/nsmf_event-exposure/v1/subscriptions",
-	}, nil
+	cfg := Nnrf_NFDiscovery.NewConfiguration()
+	cfg.SetBasePath(ctx.NrfUri)
+	client := Nnrf_NFDiscovery.NewAPIClient(cfg)
+	c, _, err := ctx.GetTokenCtx(models.ServiceName_NNRF_DISC, models.NrfNfManagementNfType_NRF)
+	if err != nil { return nil, err }
+	req := Nnrf_NFDiscovery.SearchNFInstancesRequest{ServiceNames: []models.ServiceName{models.ServiceName_NSMF_EVENT_EXPOSURE}}
+	t := models.NrfNfManagementNfType_SMF
+	r := models.NrfNfManagementNfType_NWDAF
+	req.TargetNfType = &t
+	req.RequesterNfType = &r
+	res, err := client.NFInstancesStoreApi.SearchNFInstances(c, &req)
+	if err != nil || res == nil || len(res.SearchResult.NfInstances) == 0 { return nil, fmt.Errorf("discover SMF failed: %+v", err) }
+	var base string
+	for i := range res.SearchResult.NfInstances {
+		base = util.SearchNFServiceUri(&res.SearchResult.NfInstances[i], models.ServiceName_NSMF_EVENT_EXPOSURE)
+		if base != "" { break }
+	}
+	if base == "" { return nil, fmt.Errorf("no NSMF_EVENT_EXPOSURE service found") }
+	if !strings.Contains(base, "/nsmf-event-exposure") { base = strings.TrimRight(base, "/") + "/nsmf-event-exposure/v1" }
+	url := strings.TrimRight(base, "/") + "/subscriptions"
+	return &SmfProfile{EventExposureUrl: url}, nil
 }
+
+
 
 // SubscribeToSmfEvents: 向SMF订阅事件
 func SubscribeToSmfEvents(nwdafCtx *nwdaf_context.NWDAFContext, smfProfile *SmfProfile) error {
-	// 构造SMF事件订阅请求体，仅订阅 PDU_SESSION_MODIFICATION
-	subBody := map[string]interface{}{
-			"notifUri": fmt.Sprintf("%s://%s:%d/nnwdaf-events/v1/smf-notifications",
-				nwdafCtx.URIScheme, nwdafCtx.RegisterIPv4, nwdafCtx.SBIPort),
-			"eventList": []string{
-				"PDU_SESSION_ESTABLISHMENT",
-				"PDU_SESSION_MODIFICATION",
-				"PDU_SESSION_RELEASE",
-			},
-		}
+    // 构造SMF事件订阅请求体，仅订阅 PDU_SESSION_MODIFICATION
+    subBody := map[string]interface{}{
+            "notifUri": fmt.Sprintf("%s://%s:%d/nnwdaf-events/v1/smf-notifications",
+                nwdafCtx.URIScheme, nwdafCtx.RegisterIPv4, nwdafCtx.SBIPort),
+            "eventList": []string{
+                "PDU_SESSION_ESTABLISHMENT",
+                "PDU_SESSION_MODIFICATION",
+                "PDU_SESSION_RELEASE",
+                "USAGE_REPORT",
+            },
+        }
 
 	data, _ := json.Marshal(subBody)
 

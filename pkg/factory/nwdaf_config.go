@@ -17,11 +17,16 @@ type Mongodb struct {
 	Url  string `yaml:"url"`
 }
 
+type PcfConfig struct {
+	ApiPrefix string `yaml:"apiPrefix"`
+}
+
 
 type NwdafConfig struct {
 	Configuration struct {
-		Sbi SbiConfig `yaml:"sbi"`
-		Mongodb Mongodb `yaml:"mongodb"`
+		Sbi     SbiConfig `yaml:"sbi"`
+		Mongodb Mongodb   `yaml:"mongodb"`
+		Pcf     PcfConfig `yaml:"pcf"`
 	} `yaml:"configuration"`
 }
 

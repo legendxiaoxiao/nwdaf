@@ -9,21 +9,41 @@ import (
 	"strings"
 
 	nwdaf_context "github.com/free5gc/nwdaf/internal/context"
+	"github.com/free5gc/nwdaf/internal/util"
 
 	"github.com/free5gc/openapi/models"
+	Nnrf_NFDiscovery "github.com/free5gc/openapi/nrf/NFDiscovery"
 )
 
 type AmfProfile struct {
 	EventExposureUrl string
 }
 
-// DiscoverAmfFromNrf: 这里直接返回一个硬编码的 AMF 事件订阅地址
 func DiscoverAmfFromNrf(ctx *nwdaf_context.NWDAFContext) (*AmfProfile, error) {
-	// 根据 amfcfg.yaml 配置，AMF 事件订阅接口为 127.0.0.18:8000
-	return &AmfProfile{
-		EventExposureUrl: "http://127.0.0.18:8000/namf-evts/v1/subscriptions",
-	}, nil
+	cfg := Nnrf_NFDiscovery.NewConfiguration()
+	cfg.SetBasePath(ctx.NrfUri)
+	client := Nnrf_NFDiscovery.NewAPIClient(cfg)
+	c, _, err := ctx.GetTokenCtx(models.ServiceName_NNRF_DISC, models.NrfNfManagementNfType_NRF)
+	if err != nil { return nil, err }
+	req := Nnrf_NFDiscovery.SearchNFInstancesRequest{ServiceNames: []models.ServiceName{models.ServiceName_NAMF_EVTS}}
+	t := models.NrfNfManagementNfType_AMF
+	r := models.NrfNfManagementNfType_NWDAF
+	req.TargetNfType = &t
+	req.RequesterNfType = &r
+	res, err := client.NFInstancesStoreApi.SearchNFInstances(c, &req)
+	if err != nil || res == nil || len(res.SearchResult.NfInstances) == 0 { return nil, fmt.Errorf("discover AMF failed: %+v", err) }
+	var base string
+	for i := range res.SearchResult.NfInstances {
+		base = util.SearchNFServiceUri(&res.SearchResult.NfInstances[i], models.ServiceName_NAMF_EVTS)
+		if base != "" { break }
+	}
+	if base == "" { return nil, fmt.Errorf("no NAMF_EVTS service found") }
+	if !strings.Contains(base, "/namf-evts") { base = strings.TrimRight(base, "/") + "/namf-evts/v1" }
+	url := strings.TrimRight(base, "/") + "/subscriptions"
+	return &AmfProfile{EventExposureUrl: url}, nil
 }
+
+
 
 // 从NRF获取访问令牌（AMF）
 func getAccessToken(nwdafCtx *nwdaf_context.NWDAFContext) (string, error) {
