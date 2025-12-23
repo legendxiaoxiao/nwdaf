@@ -100,63 +100,80 @@ func (n *NWDAF) startSbiServer() {
 }
 
 func (n *NWDAF) discoverAndSubscribeToAmf() {
-	// Use NRF consumer logic to find an AMF instance that supports 'namf-eventexposure'
-	amfProfile, err := consumer.DiscoverAmfFromNrf(n.Ctx)
-	if err != nil {
-		logger.InitLog.Printf("[ERROR] Failed to discover AMF: %v", err)
-		return
+	const maxAttempts = 5
+	delay := 2 * time.Second
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		amfProfile, err := consumer.DiscoverAmfFromNrf(n.Ctx)
+		if err != nil {
+			logger.InitLog.Printf("[ERROR] Failed to discover AMF (attempt %d/%d): %v", attempt, maxAttempts, err)
+		} else {
+			err = consumer.SubscribeToAmfEvents(n.Ctx, amfProfile)
+			if err == nil {
+				logger.InitLog.Printf("[INFO] Successfully subscribed to AMF for UE location events.")
+				return
+			}
+			logger.InitLog.Printf("[WARN] Subscribe to AMF events failed (attempt %d/%d): %v", attempt, maxAttempts, err)
+		}
+		time.Sleep(delay)
+		if delay < 30*time.Second {
+			delay *= 2
+		}
 	}
-
-	// Found an AMF. Now subscribe for UE location events.
-	err = consumer.SubscribeToAmfEvents(n.Ctx, amfProfile)
-	if err != nil {
-		logger.InitLog.Printf("[ERROR] Failed to subscribe to AMF events: %v", err)
-	} else {
-		logger.InitLog.Printf("[INFO] Successfully subscribed to AMF for UE location events.")
-	}
+	logger.InitLog.Printf("[ERROR] Giving up AMF subscription after %d attempts", maxAttempts)
 }
 
 func (n *NWDAF) discoverAndSubscribeToSmf() {
 	logger.InitLog.Printf("[INFO] Starting SMF discovery and subscription process...")
-	
-	// 等待一段时间让SMF注册到NRF
-	logger.InitLog.Printf("[INFO] Waiting for SMF to register to NRF...")
-	time.Sleep(2 * time.Second)
-	
-	// Use NRF consumer logic to find an SMF instance that supports 'nsmf-event-exposure'
-	logger.InitLog.Printf("[INFO] Discovering SMF instances from NRF...")
-	smfProfile, err := consumer.DiscoverSmfFromNrf(n.Ctx)
-	if err != nil {
-		logger.InitLog.Printf("[ERROR] Failed to discover SMF: %v", err)
-		return
+	const maxAttempts = 5
+	delay := 2 * time.Second
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt == 1 {
+			logger.InitLog.Printf("[INFO] Waiting for SMF to register to NRF...")
+			time.Sleep(2 * time.Second)
+		}
+		logger.InitLog.Printf("[INFO] Discovering SMF instances from NRF (attempt %d/%d)...", attempt, maxAttempts)
+		smfProfile, err := consumer.DiscoverSmfFromNrf(n.Ctx)
+		if err != nil {
+			logger.InitLog.Printf("[ERROR] Failed to discover SMF: %v", err)
+		} else {
+			logger.InitLog.Printf("[INFO] SMF discovered successfully: %s", smfProfile.EventExposureUrl)
+			logger.InitLog.Printf("[INFO] Subscribing to SMF events (attempt %d/%d)...", attempt, maxAttempts)
+			err = consumer.SubscribeToSmfEvents(n.Ctx, smfProfile)
+			if err == nil {
+				logger.InitLog.Printf("[INFO] Successfully subscribed to SMF for events.")
+				return
+			}
+			logger.InitLog.Printf("[WARN] Failed to subscribe to SMF events: %v", err)
+		}
+		time.Sleep(delay)
+		if delay < 30*time.Second {
+			delay *= 2
+		}
 	}
-	logger.InitLog.Printf("[INFO] SMF discovered successfully: %s", smfProfile.EventExposureUrl)
-
-	// Found an SMF. Now subscribe for SMF events.
-	logger.InitLog.Printf("[INFO] Subscribing to SMF events...")
-	err = consumer.SubscribeToSmfEvents(n.Ctx, smfProfile)
-	if err != nil {
-		logger.InitLog.Printf("[ERROR] Failed to subscribe to SMF events: %v", err)
-	} else {
-		logger.InitLog.Printf("[INFO] Successfully subscribed to SMF for events.")
-	}
+	logger.InitLog.Printf("[ERROR] Giving up SMF subscription after %d attempts", maxAttempts)
 }
 
 func (n *NWDAF) discoverAndSubscribeToUdm() {
-	// 发现UDM的Nudm-EE服务（当前为硬编码，后续可替换为NRF发现）
-	udmProfile, err := consumer.DiscoverUdmFromNrf(n.Ctx)
-	if err != nil {
-		logger.InitLog.Printf("[ERROR] Failed to discover UDM: %v", err)
-		return
+	const maxAttempts = 5
+	delay := 2 * time.Second
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		udmProfile, err := consumer.DiscoverUdmFromNrf(n.Ctx)
+		if err != nil {
+			logger.InitLog.Printf("[ERROR] Failed to discover UDM (attempt %d/%d): %v", attempt, maxAttempts, err)
+		} else {
+			err = consumer.SubscribeToUdmEeEvents(n.Ctx, udmProfile)
+			if err == nil {
+				logger.InitLog.Printf("[INFO] Successfully subscribed to UDM EE.")
+				return
+			}
+			logger.InitLog.Printf("[WARN] Failed to subscribe to UDM EE (attempt %d/%d): %v", attempt, maxAttempts, err)
+		}
+		time.Sleep(delay)
+		if delay < 30*time.Second {
+			delay *= 2
+		}
 	}
-	logger.InitLog.Printf("[INFO] UDM discovered successfully: %s", udmProfile.EventExposureBaseUrl)
-
-	// 订阅UDM Nudm-EE事件
-	if err := consumer.SubscribeToUdmEeEvents(n.Ctx, udmProfile); err != nil {
-		logger.InitLog.Printf("[ERROR] Failed to subscribe to UDM EE: %v", err)
-	} else {
-		logger.InitLog.Printf("[INFO] Successfully subscribed to UDM EE.")
-	}
+	logger.InitLog.Printf("[ERROR] Giving up UDM EE subscription after %d attempts", maxAttempts)
 }
 
 func (n *NWDAF) Terminate() {

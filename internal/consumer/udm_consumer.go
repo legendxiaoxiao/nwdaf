@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	nwdaf_context "github.com/free5gc/nwdaf/internal/context"
+	"github.com/free5gc/nwdaf/internal/util"
 	"github.com/free5gc/openapi/models"
+	Nnrf_NFDiscovery "github.com/free5gc/openapi/nrf/NFDiscovery"
 )
 
 type UdmProfile struct {
@@ -17,13 +19,30 @@ type UdmProfile struct {
 	EventExposureBaseUrl string
 }
 
-// DiscoverUdmFromNrf: 这里直接返回一个硬编码的 UDM EE 前缀地址
-// 可后续替换成NRF发现逻辑，类似AMF/SMF
 func DiscoverUdmFromNrf(ctx *nwdaf_context.NWDAFContext) (*UdmProfile, error) {
-	return &UdmProfile{
-		EventExposureBaseUrl: "http://127.0.0.3:8000/nudm-ee/v1",
-	}, nil
+	cfg := Nnrf_NFDiscovery.NewConfiguration()
+	cfg.SetBasePath(ctx.NrfUri)
+	client := Nnrf_NFDiscovery.NewAPIClient(cfg)
+	c, _, err := ctx.GetTokenCtx(models.ServiceName_NNRF_DISC, models.NrfNfManagementNfType_NRF)
+	if err != nil { return nil, err }
+	req := Nnrf_NFDiscovery.SearchNFInstancesRequest{ServiceNames: []models.ServiceName{models.ServiceName_NUDM_EE}}
+	t := models.NrfNfManagementNfType_UDM
+	r := models.NrfNfManagementNfType_NWDAF
+	req.TargetNfType = &t
+	req.RequesterNfType = &r
+	res, err := client.NFInstancesStoreApi.SearchNFInstances(c, &req)
+	if err != nil || res == nil || len(res.SearchResult.NfInstances) == 0 { return nil, fmt.Errorf("discover UDM failed: %+v", err) }
+	var base string
+	for i := range res.SearchResult.NfInstances {
+		base = util.SearchNFServiceUri(&res.SearchResult.NfInstances[i], models.ServiceName_NUDM_EE)
+		if base != "" { break }
+	}
+	if base == "" { return nil, fmt.Errorf("no NUDM_EE service found") }
+	if !strings.Contains(base, "/nudm-ee") { base = strings.TrimRight(base, "/") + "/nudm-ee/v1" }
+	return &UdmProfile{EventExposureBaseUrl: strings.TrimRight(base, "/")}, nil
 }
+
+
 
 // 从NRF获取UDM访问令牌
 func getAccessTokenForUdm(nwdafCtx *nwdaf_context.NWDAFContext) (string, error) {
