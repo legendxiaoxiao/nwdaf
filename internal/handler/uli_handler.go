@@ -85,10 +85,11 @@ func processAmfLocation(locReport AmfLocationReport) {
 		return
 	}
 
-	logger.AppLog.Printf("[INFO] 收到 LOCATION_REPORT: UE=%s, TAC=%s, NRCellId=%s",
+	logger.AppLog.Printf("[INFO] 收到 LOCATION_REPORT: UE=%s, TAC=%s, NRCellId=%s, ts=%s",
 		locReport.Supi,
 		locReport.Location.NrLocation.Tai.Tac,
-		locReport.Location.NrLocation.Ncgi.NrCellId)
+		locReport.Location.NrLocation.Ncgi.NrCellId,
+		time.Now().Format(time.RFC3339))
 
 	coll := "nwdaf.amf.locationReport"
 	filter := bson.M{"supi": locReport.Supi, "nrCellId": locReport.Location.NrLocation.Ncgi.NrCellId}

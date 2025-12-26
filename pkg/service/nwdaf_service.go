@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 	"time"
+	"os"
+	"os/exec"
 
 	"github.com/free5gc/nwdaf/internal/consumer"
 	"github.com/free5gc/nwdaf/internal/context"
@@ -15,7 +17,8 @@ import (
 )
 
 type NWDAF struct {
-	Ctx *context.NWDAFContext
+	Ctx   *context.NWDAFContext
+	ppCmd *exec.Cmd
 }
 
 func (n *NWDAF) Initialize() {
@@ -62,6 +65,8 @@ func (n *NWDAF) Start() {
 	go n.discoverAndSubscribeToSmf()
 	// 新增：Discover UDM并订阅Nudm-EE事件
 	go n.discoverAndSubscribeToUdm()
+	// 启动乒乓切换实时检测
+	go n.startPingPongDetector()
 }
 
 func (n *NWDAF) startSbiServer() {
@@ -97,6 +102,35 @@ func (n *NWDAF) startSbiServer() {
 	if err != nil {
 		logger.InitLog.Printf("[ERROR] Failed to start SBI server: %v", err)
 	}
+}
+
+func (n *NWDAF) startPingPongDetector() {
+	script := os.Getenv("NWDAF_PPP_SCRIPT")
+	if script == "" {
+		script = "/home/ubuntu/free5gc/NFs/nwdaf/internal/util/pingpang_handle.py"
+	}
+	py := os.Getenv("NWDAF_PY_BIN")
+	if py == "" {
+		py = "python3"
+	}
+	mongo := factory.NwdafConfigInstance.Configuration.Mongodb
+	env := os.Environ()
+	if mongo.Url != "" {
+		env = append(env, fmt.Sprintf("MONGODB_URL=%s", mongo.Url))
+	}
+	if mongo.Name != "" {
+		env = append(env, fmt.Sprintf("NWDAF_DB=%s", mongo.Name))
+	}
+	cmd := exec.Command(py, script)
+	cmd.Env = env
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		logger.InitLog.Printf("[ERROR] 启动乒乓切换检测失败: %v", err)
+		return
+	}
+	n.ppCmd = cmd
+	logger.InitLog.Printf("[INFO] 已启动乒乓切换检测: %s %s (PID=%d)", py, script, cmd.Process.Pid)
 }
 
 func (n *NWDAF) discoverAndSubscribeToAmf() {
@@ -178,6 +212,10 @@ func (n *NWDAF) discoverAndSubscribeToUdm() {
 
 func (n *NWDAF) Terminate() {
 	logger.InitLog.Printf("[INFO] Terminating NWDAF...")
+	if n.ppCmd != nil && n.ppCmd.Process != nil {
+		_ = n.ppCmd.Process.Kill()
+		logger.InitLog.Printf("[INFO] Stopped ping-pong detector process.")
+	}
 	// Deregister from NRF
 	consumer.SendDeregisterNFInstance()
 	logger.InitLog.Printf("[INFO] NWDAF terminated.")

@@ -26,7 +26,7 @@ func InitNwdafContext() *NWDAFContext {
 		NrfUri:         "http://127.0.0.10:8000",
 		NfId:           "nwdaf-1",
 		NrfCertPem:     "",
-		OAuth2Required: false,
+		OAuth2Required: true,
 	}
 	_ = mongoapi.SetMongoDB("nwdaf", "mongodb://127.0.0.1:27017")
 	return ctx

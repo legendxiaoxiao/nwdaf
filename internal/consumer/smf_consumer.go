@@ -38,7 +38,9 @@ func DiscoverSmfFromNrf(ctx *nwdaf_context.NWDAFContext) (*SmfProfile, error) {
 		if base != "" { break }
 	}
 	if base == "" { return nil, fmt.Errorf("no NSMF_EVENT_EXPOSURE service found") }
-	if !strings.Contains(base, "/nsmf-event-exposure") { base = strings.TrimRight(base, "/") + "/nsmf-event-exposure/v1" }
+	if !strings.Contains(base, "/nsmf_event-exposure") && !strings.Contains(base, "/nsmf-event-exposure") {
+		base = strings.TrimRight(base, "/") + "/nsmf_event-exposure/v1"
+	}
 	url := strings.TrimRight(base, "/") + "/subscriptions"
 	return &SmfProfile{EventExposureUrl: url}, nil
 }
