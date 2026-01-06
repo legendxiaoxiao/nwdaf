@@ -27,6 +27,10 @@ func (n *NWDAF) Initialize() {
 
 	// Initialize context
 	n.Ctx = context.InitNwdafContext()
+	sbi := factory.NwdafConfigInstance.Configuration.Sbi
+	if sbi.BindingIPv4 != "" { n.Ctx.RegisterIPv4 = sbi.BindingIPv4 }
+	if sbi.Port != 0 { n.Ctx.SBIPort = sbi.Port }
+	if v := os.Getenv("NWDAF_NRF_URI"); v != "" { n.Ctx.NrfUri = v }
 
 	mongo := factory.NwdafConfigInstance.Configuration.Mongodb
 	if mongo.Name != "" && mongo.Url != "" {
@@ -71,25 +75,20 @@ func (n *NWDAF) Start() {
 
 func (n *NWDAF) startSbiServer() {
 	router := gin.Default()
+	router.Static("/ui", "/home/ubuntu/free5gc/NFs/nwdaf/web/ui")
+	router.GET("/", func(c *gin.Context) { c.Redirect(302, "/ui/") })
 
-	// This is the endpoint for AMF notifications
 	notificationGroup := router.Group("/nnwdaf-events/v1")
 	notificationGroup.POST("/notifications", handler.HandleAmfNotification)
-	notificationGroup.GET("/uli", handler.HandleGetUli) // 新增GET接口
-	
-	// 新增SMF事件通知接口******
 	notificationGroup.POST("/smf-notifications", handler.HandleSMFEventNotification)
-	
-	// 新增安全事件通知接口******
 	notificationGroup.POST("/security-notifications", handler.HandleSecurityEventNotification)
-	
-	// 新增安全报告获取接口******
-	notificationGroup.GET("/security-report", handler.HandleGetSecurityReport)
-	
-	// 新增行为分析获取接口******
-	notificationGroup.GET("/behavior-analysis", handler.HandleGetBehaviorAnalysis)
-	// 新增UDM EE事件通知接口
 	notificationGroup.POST("/udm-ee-notifications", handler.HandleUdmEeNotification)
+	notificationGroup.GET("/amf-reports", handler.HandleGetAmfReports)
+	notificationGroup.GET("/smf-events", handler.HandleGetSmfEvents)
+	notificationGroup.GET("/smf-usage", handler.HandleGetSmfUsage)
+	notificationGroup.GET("/uli", handler.HandleGetUli)
+	notificationGroup.GET("/security-report", handler.HandleGetSecurityReport)
+	notificationGroup.GET("/behavior-analysis", handler.HandleGetBehaviorAnalysis)
 
 	sbiConfig := factory.NwdafConfigInstance.Configuration.Sbi
 	if sbiConfig.Port == 0 {
