@@ -95,6 +95,8 @@ func SubscribeToAmfEvents(nwdafCtx *nwdaf_context.NWDAFContext, amfProfile *AmfP
 				{"type": "REGISTRATION_STATE_REPORT"},
 				{"type": "LOCATION_REPORT"},
 				{"type": "REACHABILITY_REPORT"},
+				{"type": "REG_REQUEST_COUNT"},
+				{"type": "ACTIVE_UE_COUNT"},
 			},
 			"eventNotifyUri": fmt.Sprintf("%s://%s:%d/nnwdaf-events/v1/notifications",
 				nwdafCtx.URIScheme, nwdafCtx.RegisterIPv4, nwdafCtx.SBIPort),

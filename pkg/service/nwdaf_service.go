@@ -17,10 +17,12 @@ import (
 )
 
 type NWDAF struct {
-	Ctx   *context.NWDAFContext
-	ppCmd *exec.Cmd
+	Ctx        *context.NWDAFContext
+	ppCmd      *exec.Cmd
+	anomalyCmd *exec.Cmd
 }
 
+// Initialize 初始化 NWDAF 的配置、上下文与外部依赖（如 MongoDB 连接等）。
 func (n *NWDAF) Initialize() {
 	// Load config
 	factory.InitConfigFactory("/home/ubuntu/free5gc/config/nwdafcfg.yaml")
@@ -47,6 +49,7 @@ func (n *NWDAF) Initialize() {
 	// 移除自动拉取AMF ULI的调用
 }
 
+// Start 启动 NWDAF：向 NRF 注册、启动 SBI 服务，并并行进行各 NF 发现/订阅与检测任务。
 func (n *NWDAF) Start() {
 	// 1. Register to NRF
 	err := consumer.SendRegisterNFInstance(n.Ctx.NrfUri, n.Ctx.NfId, n.Ctx.GetNFProfile())
@@ -71,8 +74,11 @@ func (n *NWDAF) Start() {
 	go n.discoverAndSubscribeToUdm()
 	// 启动乒乓切换实时检测
 	go n.startPingPongDetector()
+	// 启动异常检测（孤立森林）
+	go n.startAnomalyDetector()
 }
 
+// startSbiServer 启动 NWDAF 的 SBI HTTP 服务，用于接收各类事件通知并提供查询接口/静态 UI。
 func (n *NWDAF) startSbiServer() {
 	router := gin.Default()
 	router.Static("/ui", "/home/ubuntu/free5gc/NFs/nwdaf/web/ui")
@@ -103,6 +109,7 @@ func (n *NWDAF) startSbiServer() {
 	}
 }
 
+// startPingPongDetector 启动乒乓切换实时检测脚本进程，并注入所需的环境变量（MongoDB 等）。
 func (n *NWDAF) startPingPongDetector() {
 	script := os.Getenv("NWDAF_PPP_SCRIPT")
 	if script == "" {
@@ -132,6 +139,38 @@ func (n *NWDAF) startPingPongDetector() {
 	logger.InitLog.Printf("[INFO] 已启动乒乓切换检测: %s %s (PID=%d)", py, script, cmd.Process.Pid)
 }
 
+// startAnomalyDetector 启动异常检测脚本进程（Isolation Forest），并以循环模式持续运行。
+func (n *NWDAF) startAnomalyDetector() {
+	script := os.Getenv("NWDAF_ANOMALY_SCRIPT")
+	if script == "" {
+		script = "/home/ubuntu/free5gc/NFs/nwdaf/internal/util/isolation_forest_anomaly.py"
+	}
+	py := os.Getenv("NWDAF_PY_BIN")
+	if py == "" {
+		py = "python3"
+	}
+	mongo := factory.NwdafConfigInstance.Configuration.Mongodb
+	env := os.Environ()
+	if mongo.Url != "" {
+		env = append(env, fmt.Sprintf("MONGODB_URL=%s", mongo.Url))
+	}
+	if mongo.Name != "" {
+		env = append(env, fmt.Sprintf("NWDAF_DB=%s", mongo.Name))
+	}
+	env = append(env, "NWDAF_ANOMALY_LOOP=1")
+	cmd := exec.Command(py, script)
+	cmd.Env = env
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		logger.InitLog.Printf("[ERROR] 启动异常检测失败: %v", err)
+		return
+	}
+	n.anomalyCmd = cmd
+	logger.InitLog.Printf("[INFO] 已启动异常检测: %s %s (PID=%d)", py, script, cmd.Process.Pid)
+}
+
+// discoverAndSubscribeToAmf 从 NRF 发现 AMF 并订阅事件通知；失败会指数退避重试并最终放弃。
 func (n *NWDAF) discoverAndSubscribeToAmf() {
 	const maxAttempts = 5
 	delay := 2 * time.Second
@@ -155,6 +194,7 @@ func (n *NWDAF) discoverAndSubscribeToAmf() {
 	logger.InitLog.Printf("[ERROR] Giving up AMF subscription after %d attempts", maxAttempts)
 }
 
+// discoverAndSubscribeToSmf 从 NRF 发现 SMF 并订阅事件通知；失败会指数退避重试并最终放弃。
 func (n *NWDAF) discoverAndSubscribeToSmf() {
 	logger.InitLog.Printf("[INFO] Starting SMF discovery and subscription process...")
 	const maxAttempts = 5
@@ -186,6 +226,7 @@ func (n *NWDAF) discoverAndSubscribeToSmf() {
 	logger.InitLog.Printf("[ERROR] Giving up SMF subscription after %d attempts", maxAttempts)
 }
 
+// discoverAndSubscribeToUdm 从 NRF 发现 UDM 并订阅 Nudm-EE 事件通知；失败会指数退避重试并最终放弃。
 func (n *NWDAF) discoverAndSubscribeToUdm() {
 	const maxAttempts = 5
 	delay := 2 * time.Second
@@ -209,11 +250,16 @@ func (n *NWDAF) discoverAndSubscribeToUdm() {
 	logger.InitLog.Printf("[ERROR] Giving up UDM EE subscription after %d attempts", maxAttempts)
 }
 
+// Terminate 停止 NWDAF：结束外部检测进程、向 NRF 注销并释放资源。
 func (n *NWDAF) Terminate() {
 	logger.InitLog.Printf("[INFO] Terminating NWDAF...")
 	if n.ppCmd != nil && n.ppCmd.Process != nil {
 		_ = n.ppCmd.Process.Kill()
 		logger.InitLog.Printf("[INFO] Stopped ping-pong detector process.")
+	}
+	if n.anomalyCmd != nil && n.anomalyCmd.Process != nil {
+		_ = n.anomalyCmd.Process.Kill()
+		logger.InitLog.Printf("[INFO] Stopped anomaly detector process.")
 	}
 	// Deregister from NRF
 	consumer.SendDeregisterNFInstance()
